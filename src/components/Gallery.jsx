@@ -8,7 +8,7 @@ const Gallery = () => {
   // Extract all CGs from SCRIPT_DATA
   const cgList = SCRIPT_DATA.filter((node) => node.cg_id).reduce((acc, curr) => {
     // Avoid duplicates
-    if (!acc.find((item) => item.cg_id === curr.cg_id)) {
+    if (!acc.find((item) => item.id === curr.cg_id)) {
       acc.push({
         id: curr.cg_id,
         image: curr.bg_image,
