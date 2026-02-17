@@ -1,35 +1,50 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import useStore from '../store';
 import { SCRIPT_DATA } from '../data/scriptData';
 
 const Game = () => {
   const currentLineIndex = useStore((state) => state.currentLineIndex);
+  const history = useStore((state) => state.history);
   const advanceScript = useStore((state) => state.advanceScript);
   const isQteActive = useStore((state) => state.isQteActive);
   const qteProgress = useStore((state) => state.qteProgress);
+  const qteSuccess = useStore((state) => state.qteSuccess);
   const updateQteProgress = useStore((state) => state.updateQteProgress);
+  const decayQte = useStore((state) => state.decayQte);
   const endQte = useStore((state) => state.endQte);
   const setView = useStore((state) => state.setView);
 
+  const [isFadingOut, setIsFadingOut] = useState(false);
+  const [isFadingIn, setIsFadingIn] = useState(false);
+
   const currentScene = SCRIPT_DATA[currentLineIndex];
 
-  // QTE Logic: Check for success
+  // Fade In Effect (when entering a scene)
   useEffect(() => {
-    if (isQteActive && qteProgress >= 100) {
-      endQte(true);
+    // Check if the previous scene had a fade_black effect
+    if (history.length > 0) {
+      if (history.length >= 2) {
+        const prevSceneId = history[history.length - 2];
+        const prevScene = SCRIPT_DATA.find(n => n.id === prevSceneId);
+        if (prevScene && prevScene.vfx === 'fade_black') {
+          setIsFadingIn(true);
+          const timer = setTimeout(() => setIsFadingIn(false), 1000);
+          return () => clearTimeout(timer);
+        }
+      }
     }
-  }, [isQteActive, qteProgress, endQte]);
+  }, [currentLineIndex, history]);
 
   // QTE Logic: Decay over time
   useEffect(() => {
     let interval;
     if (isQteActive) {
       interval = setInterval(() => {
-        updateQteProgress(-1);
-      }, 50);
+        decayQte();
+      }, 100);
     }
     return () => clearInterval(interval);
-  }, [isQteActive, updateQteProgress]);
+  }, [isQteActive, decayQte]);
 
   if (!currentScene) {
     return (
@@ -45,6 +60,47 @@ const Game = () => {
     );
   }
 
+  // Game Over Screen
+  if (currentScene.type === 'qte_event' && !isQteActive && !qteSuccess) {
+     return (
+      <div className="h-screen w-full bg-black text-white flex flex-col items-center justify-center font-serif animate-fade-in">
+        <h1 className="text-8xl mb-4 text-red-600 font-black tracking-widest animate-shake">DEAD END</h1>
+        <p className="text-red-800 text-xl tracking-[0.5em] mb-12">YOU HESITATED</p>
+        <button
+          onClick={() => setView('MAIN_MENU')}
+          className="px-8 py-3 border border-red-800 text-red-500 hover:bg-red-900/20 transition-all uppercase tracking-widest text-sm"
+        >
+          Return to Title
+        </button>
+      </div>
+    );
+  }
+
+  // Part Break Screen
+  if (currentScene.type === 'part_break') {
+     return (
+      <div
+        className="h-screen w-full bg-black text-white flex flex-col items-center justify-center font-serif animate-fade-in relative overflow-hidden"
+      >
+        {/* Optional Background for Part Break */}
+        <div className="absolute inset-0 opacity-30 bg-[url('/assets/ui/part_break.jpg')] bg-cover bg-center"></div>
+
+        <div className="z-10 text-center">
+            <h1 className="text-6xl md:text-8xl mb-8 text-white font-bold tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
+            {currentScene.text || "END OF PART"}
+            </h1>
+            <div className="w-24 h-1 bg-red-600 mx-auto mb-12"></div>
+            <button
+            onClick={() => advanceScript()}
+            className="px-12 py-4 border-2 border-white/20 hover:border-red-600 text-white hover:text-red-500 hover:bg-black/50 transition-all uppercase tracking-[0.2em] text-lg backdrop-blur-sm"
+            >
+            Continue to Next Part
+            </button>
+        </div>
+      </div>
+    );
+  }
+
   // Determine VFX behavior
   let containerVfx = '';
   let overlayVfx = null;
@@ -53,8 +109,14 @@ const Game = () => {
     containerVfx = 'animate-shake';
   } else if (currentScene.vfx === 'flash') {
     overlayVfx = 'animate-flash bg-white mix-blend-overlay';
-  } else if (currentScene.vfx === 'fade_black') {
-    overlayVfx = 'animate-fade-in bg-black z-50'; // Fade to black on top of everything
+  }
+
+  // Transition Overlay
+  let transitionOverlay = null;
+  if (isFadingOut) {
+      transitionOverlay = <div className="absolute inset-0 bg-black z-[100] animate-fade-in pointer-events-none"></div>;
+  } else if (isFadingIn) {
+      transitionOverlay = <div className="absolute inset-0 bg-black z-[100] animate-fade-out pointer-events-none"></div>;
   }
 
   // Determine Background Image
@@ -70,9 +132,21 @@ const Game = () => {
     charPath = `/assets/chars/${speaker}/${expression}.png`;
   }
 
+  const handleTransition = () => {
+     if (currentScene.vfx === 'fade_black') {
+         setIsFadingOut(true);
+         setTimeout(() => {
+             advanceScript();
+             setIsFadingOut(false);
+         }, 1000);
+     } else {
+         advanceScript();
+     }
+  };
+
   const handleClick = () => {
-    if (!isQteActive) {
-      advanceScript();
+    if (!isQteActive && !isFadingOut) { // Prevent clicks during fade out
+      handleTransition();
     }
   };
 
@@ -110,6 +184,9 @@ const Game = () => {
       {overlayVfx && (
         <div className={`absolute inset-0 pointer-events-none ${overlayVfx}`}></div>
       )}
+
+      {/* Transition Overlay */}
+      {transitionOverlay}
 
       {/* UI Overlay (Save/Load/Menu) */}
       <div className="absolute top-4 right-4 z-40 flex space-x-4">
@@ -210,7 +287,7 @@ const Game = () => {
           </p>
 
           {/* Continue Indicator */}
-          {!isQteActive && (
+          {!isQteActive && !isFadingOut && (
              <div className="absolute bottom-4 right-6 text-red-500/50 animate-bounce">
                ▼
              </div>

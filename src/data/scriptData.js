@@ -535,5 +535,20 @@ export const SCRIPT_DATA = [
     type: "narration",
     text: "และนั่น... คือจุดเริ่มต้นที่ทำให้เราค้นเจอข้อมูลเกี่ยวกับ 'โรงพยาบาลสมองอิการาชิ' ในวารสารเล่มนี้\nและนำพาพวกเราไปสู่ความสยองขวัญที่คาดไม่ถึง...",
     bg_image: "school_corridor.jpg"
+  },
+  {
+    id: "part_break_01",
+    type: "part_break",
+    text: "End of Part 1",
+    next_id: "scene_03_001",
+    bg_image: "school_corridor.jpg"
+  },
+  // Scene 03: Dummy Scene
+  {
+    id: "scene_03_001",
+    type: "narration",
+    text: "This is the start of Part 2. The transition was successful.",
+    bg_image: "ruins_exterior.jpg",
+    bgm: "bgm_mystery_intro"
   }
 ];

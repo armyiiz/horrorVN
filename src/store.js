@@ -41,8 +41,12 @@ const useStore = create(
 
         // Logic to move to next node
         let nextIndex = currentLineIndex + 1;
-        if (currentNode.next_scene_id) {
-           const foundIndex = SCRIPT_DATA.findIndex(node => node.id === currentNode.next_scene_id);
+
+        // Support both next_scene_id and next_id (for part_break)
+        const targetId = currentNode.next_scene_id || currentNode.next_id;
+
+        if (targetId) {
+           const foundIndex = SCRIPT_DATA.findIndex(node => node.id === targetId);
            if (foundIndex !== -1) nextIndex = foundIndex;
         }
 
@@ -66,13 +70,13 @@ const useStore = create(
           if (nextIndex < SCRIPT_DATA.length) {
             const nextNode = SCRIPT_DATA[nextIndex];
             if (nextNode.type === 'qte_event') {
-              set({ isQteActive: true, qteProgress: 0, qteSuccess: false });
+              get().startQte();
             }
           }
         }
       },
 
-      startQte: () => set({ isQteActive: true, qteProgress: 0, qteSuccess: false }),
+      startQte: () => set({ isQteActive: true, qteProgress: 20, qteSuccess: false }),
 
       endQte: (success) => {
         set({ isQteActive: false, qteSuccess: success });
@@ -81,7 +85,25 @@ const useStore = create(
         }
       },
 
-      updateQteProgress: (amount) => set((state) => ({ qteProgress: Math.min(state.qteProgress + amount, 100) })),
+      updateQteProgress: (amount) => {
+        const { qteProgress, endQte } = get();
+        let newProgress = qteProgress + amount;
+
+        // Clamp values
+        if (newProgress >= 100) {
+          newProgress = 100;
+          endQte(true);
+        } else if (newProgress <= 0) {
+          newProgress = 0;
+          endQte(false);
+        }
+
+        set({ qteProgress: newProgress });
+      },
+
+      decayQte: () => {
+        get().updateQteProgress(-0.5);
+      },
 
       setFlag: (key, value) => set((state) => ({ flags: { ...state.flags, [key]: value } })),
 
