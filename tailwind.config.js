@@ -22,7 +22,7 @@ export default {
         },
         flash: {
           '0%, 100%': { opacity: '0' },
-          '50%': { opacity: '1', backgroundColor: 'white' }
+          '50%': { opacity: '1' }
         },
         fadeIn: {
           '0%': { opacity: '0' },

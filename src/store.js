@@ -107,6 +107,38 @@ const useStore = create(
 
       setFlag: (key, value) => set((state) => ({ flags: { ...state.flags, [key]: value } })),
 
+      handleChoice: (choiceIndex) => {
+        const { currentLineIndex } = get();
+        const currentNode = SCRIPT_DATA[currentLineIndex];
+
+        if (!currentNode || currentNode.type !== 'choice') return;
+
+        const choice = currentNode.choices[choiceIndex];
+
+        if (choice) {
+          // Update flags
+          if (choice.flags) {
+            set((state) => ({ flags: { ...state.flags, ...choice.flags } }));
+          }
+
+          // Navigate
+          if (choice.next_id) {
+             const foundIndex = SCRIPT_DATA.findIndex(node => node.id === choice.next_id);
+             if (foundIndex !== -1) {
+                 set((state) => ({
+                     currentLineIndex: foundIndex,
+                     history: [...state.history, currentNode.id],
+                     isAnimating: true
+                 }));
+             } else {
+                 console.error("Target scene not found:", choice.next_id);
+             }
+          } else {
+              get().advanceScript();
+          }
+        }
+      },
+
       resetGame: () => set({
         currentLineIndex: 0,
         history: [],
