@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
 import useStore from '../store';
 import { SCRIPT_DATA } from '../data/scriptData';
+import audioManager from '../utils/audioManager';
+import Typewriter from './Typewriter';
+import Backlog from './Backlog';
+import ChoiceMenu from './ChoiceMenu';
 
 const Game = () => {
   const currentLineIndex = useStore((state) => state.currentLineIndex);
   const history = useStore((state) => state.history);
   const advanceScript = useStore((state) => state.advanceScript);
+  const handleChoice = useStore((state) => state.handleChoice);
   const isQteActive = useStore((state) => state.isQteActive);
   const qteProgress = useStore((state) => state.qteProgress);
   const qteSuccess = useStore((state) => state.qteSuccess);
@@ -14,26 +19,53 @@ const Game = () => {
   const endQte = useStore((state) => state.endQte);
   const setView = useStore((state) => state.setView);
 
-  const [isFadingOut, setIsFadingOut] = useState(false);
-  const [isFadingIn, setIsFadingIn] = useState(false);
+  // Transition State: 'none', 'fading-out', 'fading-in'
+  const [transitionState, setTransitionState] = useState('none');
+  const [showFullText, setShowFullText] = useState(false);
+  const [isSkipping, setIsSkipping] = useState(false);
+  const [isBacklogOpen, setIsBacklogOpen] = useState(false);
 
   const currentScene = SCRIPT_DATA[currentLineIndex];
 
-  // Fade In Effect (when entering a scene)
+  // Initial load transition check
   useEffect(() => {
-    // Check if the previous scene had a fade_black effect
-    if (history.length > 0) {
-      if (history.length >= 2) {
-        const prevSceneId = history[history.length - 2];
-        const prevScene = SCRIPT_DATA.find(n => n.id === prevSceneId);
-        if (prevScene && prevScene.vfx === 'fade_black') {
-          setIsFadingIn(true);
-          const timer = setTimeout(() => setIsFadingIn(false), 1000);
-          return () => clearTimeout(timer);
-        }
+    // If we just loaded and previous scene was fade_black, we might want to trigger fade-in.
+    // However, since we don't have persistent transition state in store, simpler to just start visible.
+    // If needed, we could check history.length > 0 && SCRIPT_DATA[history[last]].vfx === 'fade_black'
+    // But for now we skip to ensure content is visible.
+  }, []);
+
+  // Reset text state on scene change and handle skipping
+  useEffect(() => {
+    setShowFullText(false);
+
+    if (isSkipping && !isQteActive && currentScene?.type !== 'choice') {
+      const timer = setTimeout(() => {
+        handleTransition();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [currentLineIndex, isSkipping, isQteActive]);
+
+  // Audio Handling
+  useEffect(() => {
+    if (currentScene) {
+      if (currentScene.bgm) {
+        audioManager.playBgm(currentScene.bgm);
+      }
+
+      if (currentScene.sfx) {
+        audioManager.playSfx(currentScene.sfx);
       }
     }
-  }, [currentLineIndex, history]);
+  }, [currentLineIndex, currentScene]);
+
+  // Cleanup Audio on Unmount
+  useEffect(() => {
+    return () => {
+      audioManager.playBgm('stop');
+    };
+  }, []);
 
   // QTE Logic: Decay over time
   useEffect(() => {
@@ -83,7 +115,7 @@ const Game = () => {
         className="h-screen w-full bg-black text-white flex flex-col items-center justify-center font-serif animate-fade-in relative overflow-hidden"
       >
         {/* Optional Background for Part Break */}
-        <div className="absolute inset-0 opacity-30 bg-[url('/assets/ui/part_break.jpg')] bg-cover bg-center"></div>
+        <div className="absolute inset-0 opacity-30 bg-[url('/assets/ui/part_break.webp')] bg-cover bg-center"></div>
 
         <div className="z-10 text-center">
             <h1 className="text-6xl md:text-8xl mb-8 text-white font-bold tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
@@ -108,14 +140,16 @@ const Game = () => {
   if (currentScene.vfx === 'shake') {
     containerVfx = 'animate-shake';
   } else if (currentScene.vfx === 'flash') {
-    overlayVfx = 'animate-flash bg-white mix-blend-overlay';
+    overlayVfx = 'animate-flash bg-red-600 mix-blend-hard-light';
   }
 
   // Transition Overlay
   let transitionOverlay = null;
-  if (isFadingOut) {
+  if (transitionState === 'fading-out') {
+      // Screen becomes black (opacity 0 -> 1)
       transitionOverlay = <div className="absolute inset-0 bg-black z-[100] animate-fade-in pointer-events-none"></div>;
-  } else if (isFadingIn) {
+  } else if (transitionState === 'fading-in') {
+      // Screen becomes visible (opacity 1 -> 0)
       transitionOverlay = <div className="absolute inset-0 bg-black z-[100] animate-fade-out pointer-events-none"></div>;
   }
 
@@ -129,15 +163,16 @@ const Game = () => {
   } else if (currentScene.speaker) {
     const speaker = currentScene.speaker.toLowerCase();
     const expression = currentScene.expression ? currentScene.expression.toLowerCase() : 'neutral';
-    charPath = `/assets/chars/${speaker}/${expression}.png`;
+    charPath = `/assets/chars/${speaker}/${expression}.webp`;
   }
 
   const handleTransition = () => {
      if (currentScene.vfx === 'fade_black') {
-         setIsFadingOut(true);
+         setTransitionState('fading-out');
          setTimeout(() => {
              advanceScript();
-             setIsFadingOut(false);
+             setTransitionState('fading-in');
+             setTimeout(() => setTransitionState('none'), 1000);
          }, 1000);
      } else {
          advanceScript();
@@ -145,8 +180,15 @@ const Game = () => {
   };
 
   const handleClick = () => {
-    if (!isQteActive && !isFadingOut) { // Prevent clicks during fade out
-      handleTransition();
+    if (isBacklogOpen) return;
+    if (currentScene.type === 'choice') return;
+
+    if (!isQteActive && transitionState === 'none') {
+      if (!showFullText && !isSkipping) {
+        setShowFullText(true);
+      } else {
+        handleTransition();
+      }
     }
   };
 
@@ -189,7 +231,19 @@ const Game = () => {
       {transitionOverlay}
 
       {/* UI Overlay (Save/Load/Menu) */}
-      <div className="absolute top-4 right-4 z-40 flex space-x-4">
+      <div className="absolute top-4 right-4 z-40 flex space-x-4 pointer-events-auto">
+        <button
+          onClick={(e) => { e.stopPropagation(); setIsSkipping(!isSkipping); }}
+          className={`bg-black/50 text-white px-4 py-1 border border-gray-600 hover:bg-red-900/50 text-xs tracking-widest uppercase backdrop-blur-sm ${isSkipping ? 'text-red-500 border-red-500 animate-pulse' : ''}`}
+        >
+          {isSkipping ? 'Stop Skip' : 'Skip'}
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); setIsBacklogOpen(true); }}
+          className="bg-black/50 text-white px-4 py-1 border border-gray-600 hover:bg-red-900/50 text-xs tracking-widest uppercase backdrop-blur-sm"
+        >
+          Log
+        </button>
         <button
           onClick={(e) => { e.stopPropagation(); setView('SAVE_MENU'); }}
           className="bg-black/50 text-white px-4 py-1 border border-gray-600 hover:bg-red-900/50 text-xs tracking-widest uppercase backdrop-blur-sm"
@@ -209,6 +263,16 @@ const Game = () => {
           Menu
         </button>
       </div>
+
+      {/* Backlog Overlay */}
+      {isBacklogOpen && (
+        <Backlog history={history} onClose={() => setIsBacklogOpen(false)} />
+      )}
+
+      {/* Choice Menu */}
+      {currentScene.type === 'choice' && (
+        <ChoiceMenu choices={currentScene.choices} onChoice={handleChoice} />
+      )}
 
       {/* Main Content Area */}
       <div className="flex-grow"></div>
@@ -280,14 +344,26 @@ const Game = () => {
             drop-shadow-md
             mt-2
             text-shadow
+            min-h-[3em]
           ">
-            {currentScene.text}
-            {/* Typewriter Cursor */}
-            <span className="inline-block w-2.5 h-6 bg-red-600 ml-1 animate-pulse align-middle shadow-[0_0_10px_red]"></span>
+            {showFullText || isSkipping ? (
+              <>
+                 {currentScene.text}
+                 {(!isSkipping && !isQteActive && transitionState === 'none') && (
+                     <span className="inline-block w-2.5 h-6 bg-red-600 ml-1 animate-pulse align-middle shadow-[0_0_10px_red]"></span>
+                 )}
+              </>
+            ) : (
+               <Typewriter
+                  text={currentScene.text}
+                  onComplete={() => setShowFullText(true)}
+                  speed={30}
+               />
+            )}
           </p>
 
           {/* Continue Indicator */}
-          {!isQteActive && !isFadingOut && (
+          {!isQteActive && transitionState === 'none' && (showFullText || isSkipping) && (
              <div className="absolute bottom-4 right-6 text-red-500/50 animate-bounce">
                ▼
              </div>
